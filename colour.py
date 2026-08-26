@@ -69,7 +69,7 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
 
     # HSV separates colour from brightness more effectively than grayscale.
     # image_hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)  # Convert the image to a different colour space.
-    image_lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB)
+    image_lab = cv.BGR2LAB(image_bgr)
 
     # Approximate brown coffee-bean range.
     # lower_brown = np.array([2, 35, 35], dtype=np.uint8) # for hsv
@@ -80,7 +80,7 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     # print(image_hsv)
     # print(image_lab)
 
-    colour_mask = cv2.inRange(  # Mask only the brown coffee pixels that match the selected threshold range
+    colour_mask = cv.inRange(  # Mask only the brown coffee pixels that match the selected threshold range
         image_lab,          # change this to either hsv or lab
         lower_brown,  
         upper_brown,  
@@ -118,7 +118,9 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     # thickness: Border thickness (-1 fills the ellipse).
 
     # Keep only brown pixels inside the region of interest.
-    mask = cv2.bitwise_and(colour_mask, roi_mask)  # Combine masks to isolate only the pixels that belong to the bean or overlap region.
+    mask = np.bitwise_and(colour_mask, roi_mask)  # Combine masks to isolate only the pixels that belong to the bean or overlap region.
+
+
 
     # small_kernel = cv2.getStructuringElement(  # Create the element that defines how the mask is expanded or eroded during filtering.
     #     cv2.MORPH_ELLIPSE,  
@@ -131,20 +133,10 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     # )  
 
     # Remove small isolated pixels.
-    # mask = cv2.morphologyEx(  # Apply a morphological filter to clean or reshape the mask.
-    #     mask,  
-    #     cv2.MORPH_OPEN,  
-    #     small_kernel,  
-    #     iterations=1,  
-    # )  
+    # mask = cv2.morphologyEx(mask,cv2.MORPH_OPEN,small_kernel,iterations=1)  
 
     # # Fill small holes and connect nearby bean regions.
-    # mask = cv2.morphologyEx(  # Apply a morphological filter to clean or reshape the mask.
-    #     mask,  
-    #     cv2.MORPH_CLOSE,  
-    #     large_kernel,  
-    #     iterations=2,  
-    # )  
+    # mask = cv2.morphologyEx(mask,cv2.MORPH_CLOSE,large_kernel,iterations=2)  
 
     return mask
 

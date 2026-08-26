@@ -3,6 +3,7 @@ from pathlib import Path  # Let the script resolve file paths relative to the pr
 import cv2  # Use OpenCV to read, filter, and display the roast images.
 import matplotlib.pyplot as plt  # Plot the processed image and measurement panels for inspection.
 import numpy as np  # Work with image arrays and numeric operations during the analysis.
+import opencv_libraries as cv
 
 #Colour Algorithm
 
@@ -63,10 +64,11 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     height, width = image_bgr.shape[:2]  
 
     # Slight blur reduces isolated noisy pixels.
-    blurred = cv2.GaussianBlur(image_bgr, (5, 5), 0)  # Smooth the image to reduce noise before processing.
+    blurred = cv.GaussianBlur(image_bgr, (5, 5), 0)  # Smooth the image to reduce noise before processing.
+    # blurred = image_bgr
 
     # HSV separates colour from brightness more effectively than grayscale.
-    image_hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)  # Convert the image to a different colour space.
+    # image_hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)  # Convert the image to a different colour space.
     image_lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB)
 
     # Approximate brown coffee-bean range.

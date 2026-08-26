@@ -1,5 +1,6 @@
 from pathlib import Path  # Let the script resolve file paths relative to the project folder.
 
+import time
 import cv2  # Use OpenCV to read, filter, and display the roast images.
 import matplotlib.pyplot as plt  # Plot the processed image and measurement panels for inspection.
 import numpy as np  # Work with image arrays and numeric operations during the analysis.
@@ -64,12 +65,19 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     height, width = image_bgr.shape[:2]  
 
     # Slight blur reduces isolated noisy pixels.
+    start1 = time.perf_counter()
     blurred = cv.GaussianBlur(image_bgr, (5, 5), 0)  # Smooth the image to reduce noise before processing.
+    stop1 = time.perf_counter()
+    print(-start1+stop1)
+
     # blurred = image_bgr
 
     # HSV separates colour from brightness more effectively than grayscale.
     # image_hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)  # Convert the image to a different colour space.
+    start1 = time.perf_counter()
     image_lab = cv.BGR2LAB(image_bgr)
+    stop1 = time.perf_counter()
+    print(-start1+stop1)
 
     # Approximate brown coffee-bean range.
     # lower_brown = np.array([2, 35, 35], dtype=np.uint8) # for hsv
@@ -79,7 +87,6 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
 
     # print(image_hsv)
     # print(image_lab)
-
     colour_mask = cv.inRange(  # Mask only the brown coffee pixels that match the selected threshold range
         image_lab,          # change this to either hsv or lab
         lower_brown,  
@@ -89,13 +96,13 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     # Limit processing to the central bean-containing region.
     roi_mask = np.zeros((height, width), dtype=np.uint8)  # Initialise a blank array that will be filled with the processed output.
 
-    centre = (width // 2, (height // 2)-100)  
+    centre = ((width // 2)+50, (height // 2)-120)  
 
     # Adjust proportions to fit the circular bean region
     # rn these values (0.17 and 0,25 for w and h) work for file.good.jpg ----> might need small adjustments but works well overall
     axes = (  
-        int(width * 0.17),  
-        int(height * 0.25),  
+        int(width * 0.18),  
+        int(height * 0.26),  
     )  
 
     cv2.ellipse(  # Draw the fitted ellipse on the output image to visually verify the bean shape.
@@ -265,7 +272,8 @@ def display_results(  # Show the original image, bean mask, segmented bean view,
 
 
 def main() -> None:  # Run the full Otsu threshold experiment over the Lab channels.
-    image_path = Path("images/file.good.jpg")  
+    start_time = time.perf_counter()
+    image_path = Path("images/file.name1.jpg")  
 
     image_bgr = load_image(image_path)  
     mask = create_bean_mask(image_bgr)  
@@ -274,6 +282,10 @@ def main() -> None:  # Run the full Otsu threshold experiment over the Lab chann
         image_bgr,  
         mask,  
     )  
+    estimated_agtron, error = estimate_agtron(median_lab)  
+    end_time = time.perf_counter()
+    execution_time = end_time - start_time
+    print(f"Execution time: {execution_time:.6f} seconds")
 
     print("Mean bean colour:")  # Print the current result to the console.
     print(f"L* = {mean_lab[0]:.2f}")  # Print the current result to the console.
@@ -284,8 +296,6 @@ def main() -> None:  # Run the full Otsu threshold experiment over the Lab chann
     print(f"L* = {median_lab[0]:.2f}")  # Print the current result to the console.
     print(f"a* = {median_lab[1]:.2f}")  # Print the current result to the console.
     print(f"b* = {median_lab[2]:.2f}")  # Print the current result to the console.
-
-    estimated_agtron, error = estimate_agtron(median_lab)  
 
     display_results(  
     image_bgr,  
@@ -299,4 +309,3 @@ def main() -> None:  # Run the full Otsu threshold experiment over the Lab chann
 
 if __name__ == "__main__":  # Run the script only when this file is executed directly.
     main()  
-

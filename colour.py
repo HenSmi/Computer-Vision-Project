@@ -74,21 +74,21 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
 
     # HSV separates colour from brightness more effectively than grayscale.
     # image_hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)  # Convert the image to a different colour space.
-    start1 = time.perf_counter()
-    image_lab = cv.BGR2LAB(image_bgr)
-    stop1 = time.perf_counter()
-    print(-start1+stop1)
+    # image_lab = cv.BGR2LAB(blurred)
 
     # Approximate brown coffee-bean range.
     # lower_brown = np.array([2, 35, 35], dtype=np.uint8) # for hsv
     # upper_brown = np.array([30, 255, 245], dtype=np.uint8) # for hsv
-    lower_brown = np.array([10*(255.0/100.0), -10 + 128.0, 5 + 128.0], dtype=np.uint8) #arbitrary values
-    upper_brown = np.array([75*(255.0/100.0), 40 + 128.0, 60 + 128.0], dtype=np.uint8)
+    # lower_brown = np.array([10*(255.0/100.0), -10 + 128.0, 5 + 128.0], dtype=np.uint8) #arbitrary values
+    # upper_brown = np.array([75*(255.0/100.0), 40 + 128.0, 60 + 128.0], dtype=np.uint8)
+    lower_brown = np.array([20, 31, 15], dtype=np.uint8) #arbitrary values
+    upper_brown = np.array([73,152,255], dtype=np.uint8)
+
 
     # print(image_hsv)
     # print(image_lab)
     colour_mask = cv.inRange(  # Mask only the brown coffee pixels that match the selected threshold range
-        image_lab,          # change this to either hsv or lab
+        blurred,          # change this to either hsv or lab
         lower_brown,  
         upper_brown,  
     )  
@@ -153,23 +153,23 @@ def measure_bean_colour(  # Read the Lab values of the masked bean pixels and su
     mask: np.ndarray,  
 ) -> tuple[np.ndarray, np.ndarray]:  
     """Return the median and mean CIELAB values of all segmented bean pixels."""  
-    image_lab_opencv = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2LAB)  # Convert the image to a different colour space.
+    # image_lab_opencv = cv.BGR2LAB(image_bgr)  # Convert the image to a different colour space.
 
-    bean_pixels_opencv = image_lab_opencv[mask > 0]  
+    bean_pixels_opencv = image_bgr[mask > 0]  
 
     if bean_pixels_opencv.size == 0:
         raise ValueError("The mask contains no bean pixels.")
-    lab_pixels = bean_pixels_opencv.astype(np.float32)  
+    pixels = bean_pixels_opencv.astype(np.float32)  
     
-    bean_pixels_lab = np.empty_like(lab_pixels, dtype=np.float32)  
-    bean_pixels_lab[:, 0] = lab_pixels[:, 0] * 100.0 / 255.0  
-    bean_pixels_lab[:, 1] = lab_pixels[:, 1] - 128.0  
-    bean_pixels_lab[:, 2] = lab_pixels[:, 2] - 128.0  
+    # bean_pixels_lab = np.empty_like(lab_pixels, dtype=np.float32)  
+    # bean_pixels_lab[:, 0] = lab_pixels[:, 0] * 100.0 / 255.0  
+    # bean_pixels_lab[:, 1] = lab_pixels[:, 1] - 128.0  
+    # bean_pixels_lab[:, 2] = lab_pixels[:, 2] - 128.0  
 
-    median_lab = np.median(bean_pixels_lab, axis=0)  # Compute the median or mean Lab colour of the bean pixels so the roast colour can be summarised.
-    mean_lab = np.mean(bean_pixels_lab, axis=0)  # Compute the median or mean Lab colour of the bean pixels so the roast colour can be summarised.
+    median = np.median(pixels, axis=0)  # Compute the median or mean Lab colour of the bean pixels so the roast colour can be summarised.
+    mean = np.mean(pixels, axis=0)  # Compute the median or mean Lab colour of the bean pixels so the roast colour can be summarised.
 
-    return median_lab, mean_lab
+    return median, mean
 
 
 def lab_to_rgb(lab_colour: np.ndarray) -> np.ndarray:  # Convert a Lab colour back to RGB so it can be displayed as a colour patch.
@@ -271,31 +271,21 @@ def display_results(  # Show the original image, bean mask, segmented bean view,
     plt.show()  # Create or display the plotting figure.
 
 
-def main() -> None:  # Run the full Otsu threshold experiment over the Lab channels.
+def main() -> None: 
     start_time = time.perf_counter()
     image_path = Path("images/file.name1.jpg")  
 
     image_bgr = load_image(image_path)  
     mask = create_bean_mask(image_bgr)  
-
-    median_lab, mean_lab = measure_bean_colour(  
-        image_bgr,  
-        mask,  
-    )  
-    estimated_agtron, error = estimate_agtron(median_lab)  
     end_time = time.perf_counter()
     execution_time = end_time - start_time
+
+    median, mean = measure_bean_colour(image_bgr,mask)
+    median_lab = cv.BGR2LABone(median)
+    mean_lab = cv.BGR2LABone(mean)
+
+    estimated_agtron, error = estimate_agtron(median_lab)  
     print(f"Execution time: {execution_time:.6f} seconds")
-
-    print("Mean bean colour:")  # Print the current result to the console.
-    print(f"L* = {mean_lab[0]:.2f}")  # Print the current result to the console.
-    print(f"a* = {mean_lab[1]:.2f}")  # Print the current result to the console.
-    print(f"b* = {mean_lab[2]:.2f}")  # Print the current result to the console.
-
-    print("\nMedian bean colour:")  # Print the current result to the console.
-    print(f"L* = {median_lab[0]:.2f}")  # Print the current result to the console.
-    print(f"a* = {median_lab[1]:.2f}")  # Print the current result to the console.
-    print(f"b* = {median_lab[2]:.2f}")  # Print the current result to the console.
 
     display_results(  
     image_bgr,  

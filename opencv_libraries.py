@@ -111,11 +111,13 @@ def BGR2LAB(image: np.ndarray) -> np.ndarray:
     lab = np.stack([L_uint8, a_uint8, b_uint8], axis=2)
     return lab
 
-def BGR2LABone(rgb: np.ndarray) -> np.ndarray:
-    # BGR → RGB (flip channels) this will be removed if i no longer use opencv.imread
-    
+def BGR2LABone(bgr: np.ndarray) -> np.ndarray:
+    rgb = np.array([0,0,0])
+    rgb[0] = bgr[2]
+    rgb[1] = bgr[1]
+    rgb[2] = bgr[0]
     # Normalize to [0, 1] as that is what is needed for converting to XYZ
-    rgb_norm = rgb.astype(np.float64) / 255.0
+    rgb_norm = rgb / 255.0
     
     # Apply gamma correction (sRGB → linear RGB) as specified by standard
     rgb_linear = np.where(
@@ -132,7 +134,7 @@ def BGR2LABone(rgb: np.ndarray) -> np.ndarray:
     ])
     
     # Apply transformation RGB_linear → XYZ using D65 matrix
-    xyz = [None,None,None]
+    xyz = [0,0,0]
     for i in range(3):
         for j in range(3):
             xyz[i] += rgb_linear[j] * matrix_rgb2xyz[i][j]
@@ -162,11 +164,14 @@ def BGR2LABone(rgb: np.ndarray) -> np.ndarray:
     L = 116 * f_y - 16
     a = 500 * (f_x - f_y)
     b = 200 * (f_y - f_z)
-    
+    # print(L,a,b)
     # convert to 255 mapping
-    L_uint8 = (L * 255.0 / 100.0).astype(np.uint8)
-    a_uint8 = (a + 128).clip(0, 255).astype(np.uint8)
-    b_uint8 = (b + 128).clip(0, 255).astype(np.uint8)
+    # L_uint8 = (L * 255.0 / 100.0).astype(np.uint8)
+    # a_uint8 = (a + 128).clip(0, 255).astype(np.uint8)
+    # b_uint8 = (b + 128).clip(0, 255).astype(np.uint8)
     
-    lab = np.stack([L_uint8, a_uint8, b_uint8], axis=2)
+    lab = np.array([L,a,b])
     return lab
+
+# print(BGR2LABone(np.array([ 35,  94, 124])))
+# print(BGR2LABone(np.array([ 200,  200, 20])))

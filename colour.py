@@ -1,7 +1,6 @@
 from pathlib import Path  # Let the script resolve file paths relative to the project folder.
 
 import time
-import cv2  # Use OpenCV to read, filter, and display the roast images.
 import matplotlib.pyplot as plt  # Plot the processed image and measurement panels for inspection.
 import numpy as np  # Work with image arrays and numeric operations during the analysis.
 import opencv_libraries as cv
@@ -105,7 +104,7 @@ def estimate_agtron_linear(
 
 def load_image(image_path: Path) -> np.ndarray:  # Read the roast image from disk and fail clearly if it is missing.
     """Load an image and raise a useful error if loading fails."""  
-    image_bgr = cv2.imread(str(image_path))  # Load an image from disk using OpenCV.
+    image_bgr = cv.imread(str(image_path), 1)
 
     if image_bgr is None:
         raise FileNotFoundError(f"Could not load image: {image_path}")
@@ -157,7 +156,7 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     )  
 
     ellipse_mask_uint8 = (ellipse_mask * 255).astype(np.uint8)
-    mask = cv2.bitwise_and(colour_mask, ellipse_mask_uint8)
+    mask = np.bitwise_and(colour_mask, ellipse_mask_uint8)
     
     # # Limit processing to the central bean-containing region.
     # roi_mask = np.zeros((height, width), dtype=np.uint8)  # Initialise a blank array that will be filled with the processed output.
@@ -205,7 +204,7 @@ def lab_to_rgb(lab_colour: np.ndarray) -> np.ndarray:  # Convert a Lab colour ba
     lab_pixel[0, 0, 1] = lab_colour[1]  
     lab_pixel[0, 0, 2] = lab_colour[2]  
 
-    rgb_pixel = cv2.cvtColor(lab_pixel, cv2.COLOR_Lab2RGB)  # Convert the image to a different colour space.
+    rgb_pixel = cv.cvtColor(lab_pixel, cv.COLOR_Lab2RGB)  # Convert the image to a different colour space.
 
     rgb_colour = np.clip(rgb_pixel[0, 0], 0.0, 1.0)  # Clamp the brightness-adjusted pixels back into the 0-255 range so the image remains valid.
 
@@ -224,7 +223,7 @@ def display_results(  # Show the original image, bean mask, segmented bean view,
     Display the original image, mask, segmented image,  
     mean colour patch and median colour patch.  
     """  
-    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)  # Convert the image to a different colour space.
+    image_rgb = image_bgr[:, :, ::-1]  # Convert the image from BGR to RGB order without OpenCV.
 
     # Create the segmented image.
     segmented_rgb = np.zeros_like(image_rgb)

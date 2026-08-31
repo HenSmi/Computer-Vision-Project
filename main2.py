@@ -1,6 +1,5 @@
 from pathlib import Path  # Let the script resolve file paths relative to the project folder.
 
-import cv2  # Use OpenCV to read, filter, and display the roast images.
 import matplotlib.pyplot as plt  # Plot the processed image and measurement panels for inspection.
 import numpy as np  # Work with image arrays and numeric operations during the analysis.
 from skimage.feature import (  # Pull in the texture-analysis tools for LBP and GLCM.
@@ -8,9 +7,10 @@ from skimage.feature import (  # Pull in the texture-analysis tools for LBP and 
     graycoprops,  # Extract the GLCM statistics that summarise contrast, uniformity, and texture strength.
     local_binary_pattern,  # Compute the local texture pattern for each bean pixel so the script can analyse surface roughness.
 )  
+import opencv_libraries as cv
 
-# Reuse the loading and segmentation functions from main.py.
-from main import create_bean_mask, load_image
+# Reuse the loading and segmentation functions from colour.py.
+from colour import create_bean_mask, load_image
 
 
 # ---------------------------------------------------------------------------
@@ -53,9 +53,13 @@ def prepare_grayscale(
     A small Gaussian blur suppresses isolated camera noise while preserving  
     larger surface features such as cracks and rough bean structure.  
     """  
-    image_gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)  # Convert the image to a different colour space.
+    image_gray = (
+        0.299 * image_bgr[:, :, 2]
+        + 0.587 * image_bgr[:, :, 1]
+        + 0.114 * image_bgr[:, :, 0]
+    ).astype(np.uint8)
 
-    image_gray = cv2.GaussianBlur(  # Smooth the image to reduce noise before processing.
+    image_gray = cv.GaussianBlur(  # Smooth the image to reduce noise before processing.
         image_gray,  
         (3, 3),
         0,  
@@ -279,13 +283,10 @@ def create_patch_overlay(
             coverage = np.count_nonzero(mask_patch) / mask_patch.size  # Count the selected pixels for area or coverage calculations.
 
             if coverage >= MINIMUM_BEAN_COVERAGE:
-                cv2.rectangle(  
-                    overlay,  
-                    (left, top),
-                    (right - 1, bottom - 1),
-                    (255, 255, 255),
-                    thickness=2,  
-                )  
+                overlay[top:top + 2, left:right] = 255
+                overlay[bottom - 2:bottom, left:right] = 255
+                overlay[top:bottom, left:left + 2] = 255
+                overlay[top:bottom, right - 2:right] = 255
 
                 patch_count += 1  
 
@@ -308,7 +309,7 @@ def display_texture_results(
     """  
     Display the segmentation, LBP output, LBP histogram and GLCM features.  
     """  
-    image_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)  # Convert the image to a different colour space.
+    image_rgb = image_bgr[:, :, ::-1]  # Convert the image from BGR to RGB order without OpenCV.
 
     segmented_gray = create_segmented_grayscale(  
         image_gray,  
@@ -419,7 +420,7 @@ def main() -> None:  # Run the full Otsu threshold experiment over the Lab chann
     image_bgr = load_image(IMAGE_PATH)  # Load the source roast image so the bean mask and area analysis can be run.
 
     # This uses the same segmentation method as the colour program.
-    mask = create_bean_mask(image_bgr)  
+    _, mask, _ = create_bean_mask(image_bgr)
 
     image_gray = prepare_grayscale(image_bgr)  # Convert the image to a single-channel grayscale form for texture analysis.
 

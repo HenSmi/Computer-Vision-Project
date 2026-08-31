@@ -9,7 +9,7 @@ import opencv_libraries as cv
 #Colour Algorithm
 
 
-AGTRON_TABLE = [  # Store the Lab reference points used to estimate the nearest Agtron value.
+AGTRON_TABLE = [  # Store the Lab reference points used to estimate the nearest Agtron value
     {"agtron": 95, "L": 83.7, "a": 0.5,  "b": 27.2},  
     {"agtron": 85, "L": 66.2, "a": 6.8,  "b": 28.5},  
     {"agtron": 75, "L": 51.2, "a": 11.1, "b": 28.0},  
@@ -19,10 +19,8 @@ AGTRON_TABLE = [  # Store the Lab reference points used to estimate the nearest 
     {"agtron": 35, "L": 15.8, "a": 8.9,  "b": 9.1},  
     {"agtron": 25, "L": 13.2, "a": 3.4,  "b": 0.1},  
 ]  
-
-def crop_to_ellipse(image: np.ndarray, centre: tuple[float, float], axes: tuple[float, float], angle: float = 0.0,) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]:
-    #Crop an image to an ellipse.
-
+#Crop an image to an ellipse
+def crop_to_ellipse(image: np.ndarray,centre: tuple[float, float],axes: tuple[float, float],angle: float = 0.0) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]:
     if image.ndim != 3:
         raise ValueError("image must be a 3D array: (height, width, channels)")
 
@@ -34,7 +32,7 @@ def crop_to_ellipse(image: np.ndarray, centre: tuple[float, float], axes: tuple[
     cos_angle = np.cos(angle_rad)
     sin_angle = np.sin(angle_rad)
 
-    # Bounding-box extents for a rotated ellipse.
+    # Bounding-box extents for a rotated ellipse
     x_extent = np.sqrt((rx * cos_angle) ** 2 + (ry * sin_angle) ** 2)
     y_extent = np.sqrt((rx * sin_angle) ** 2 + (ry * cos_angle) ** 2)
 
@@ -43,49 +41,67 @@ def crop_to_ellipse(image: np.ndarray, centre: tuple[float, float], axes: tuple[
     y_min = max(0, int(np.floor(cy - y_extent)))
     y_max = min(height, int(np.ceil(cy + y_extent)) + 1)
 
-    # Coordinates within the cropped image.
-    y_coords, x_coords = np.indices((y_max - y_min, x_max - x_min))
-    x_coords = x_coords + x_min - cx
-    y_coords = y_coords + y_min - cy
+    # Coordinates within the cropped image
+    y_coords = np.arange(y_min, y_max, dtype=np.float32)[:, None] - cy
+    x_coords = np.arange(x_min, x_max, dtype=np.float32)[None, :] - cx
+    #np.indices allocates two full (H, W) arrays even though x_coords only varies along 
+    #columns and y_coords only varies along rows. Build them as 1D and let numpy broadcast
+    #halves memory traffic, you're allocating H + W elements instead of 2*H*W
 
-    # Rotate coordinates into the ellipse's local coordinate system.
+    # Rotate coordinates into the ellipse's local coordinate system
     x_rotated = cos_angle * x_coords + sin_angle * y_coords
     y_rotated = -sin_angle * x_coords + cos_angle * y_coords
 
-    ellipse_mask = (
-        (x_rotated / rx) ** 2 +
-        (y_rotated / ry) ** 2
-    ) <= 1.0
+    #precompute 1/rx² and 1/ry² once (scalars) and multiply as div>mul
+    inv_rx2 = 1.0 / (rx * rx)
+    inv_ry2 = 1.0 / (ry * ry)
+    ellipse_mask = (x_rotated * x_rotated) * inv_rx2 + (y_rotated * y_rotated) * inv_ry2 <= 1.0
 
-    cropped_image = image[y_min:y_max, x_min:x_max].copy()
-    cropped_image[~ellipse_mask] = 0
+    cropped_image = image[y_min:y_max, x_min:x_max] * ellipse_mask[:, :, None]
 
     return cropped_image, ellipse_mask, (x_min, y_min)
 
-def estimate_agtron(measured_lab):  # Compare the measured bean colour to the Agtron reference table and return the closest match.
-    """  
-    Estimate the Agtron value by finding the nearest reference  
-    in CIELAB space.  
-    """  
+def estimate_agtron_linear(
+    measured_lab: np.ndarray,
+) -> tuple[float, float]:
+    measured_lab = np.asarray(measured_lab, dtype=np.float32)
+    references = np.array(
+        [[entry["L"], entry["a"], entry["b"]] for entry in AGTRON_TABLE],
+        dtype=np.float32,)
+    agtron_values = np.array(
+        [entry["agtron"] for entry in AGTRON_TABLE],
+        dtype=np.float32,)
 
-    best_agtron = None  
-    smallest_distance = float("inf")  
+    best_distance = float("inf")
+    best_agtron = float(agtron_values[0])
 
-    for sample in AGTRON_TABLE:  # Iterate over every item in the collection so each region is processed individually.
+    for index in range(len(references) - 1):
+        point_a = references[index]
+        point_b = references[index + 1]
 
-        reference = np.array([
-            sample["L"],  
-            sample["a"],  
-            sample["b"]  
-        ])  
+        segment = point_b - point_a
+        segment_length_squared = np.dot(segment, segment)
 
-        distance = np.linalg.norm(measured_lab - reference)  # Measure the distance between the bean colour and each reference Agtron sample in Lab space.
+        if segment_length_squared == 0:
+            t = 0.0
+        else:
+            # Project measured_lab onto the current line segment.
+            t = np.dot(measured_lab - point_a, segment) / segment_length_squared
+            t = np.clip(t, 0.0, 1.0)
 
-        if distance < smallest_distance:
-            smallest_distance = distance  
-            best_agtron = sample["agtron"]  
+        closest_point = point_a + t * segment
+        distance = np.linalg.norm(measured_lab - closest_point)
 
-    return best_agtron, smallest_distance
+        if distance < best_distance:
+            best_distance = distance
+
+            # Interpolate the Agtron value along the same segment.
+            best_agtron = (
+                agtron_values[index]
+                + t * (agtron_values[index + 1] - agtron_values[index])
+            )
+
+    return best_agtron, best_distance
 
 def load_image(image_path: Path) -> np.ndarray:  # Read the roast image from disk and fail clearly if it is missing.
     """Load an image and raise a useful error if loading fails."""  
@@ -116,7 +132,7 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     cropped_image, ellipse_mask, offset = crop_to_ellipse(image=image_bgr,centre=centre,axes=axes)
     # Slight blur reduces isolated noisy pixels.
     start1 = time.perf_counter()
-    blurred = cv.GaussianBlur(cropped_image, (9, 9), 0)  # Smooth the image to reduce noise before processing.
+    blurred = cv.GaussianBlur(cropped_image, (9, 9), 0)  # Smooth the image to reduce noise before processing
     stop1 = time.perf_counter()
     print(-start1+stop1)
 
@@ -145,23 +161,6 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     
     # # Limit processing to the central bean-containing region.
     # roi_mask = np.zeros((height, width), dtype=np.uint8)  # Initialise a blank array that will be filled with the processed output.
-
-    # cv2.ellipse(  # Draw the fitted ellipse on the output image to visually verify the bean shape.
-    #     roi_mask,  
-    #     centre,  
-    #     axes,  
-    #     360,  
-    #     255,  
-    #     -1,  #fills the ellipse
-    # )  
-    # image: Image on which ellipse is drawn.
-    # center: Center of ellipse as (x, y).
-    # axes: Tuple containing semi-major and semi-minor axis lengths (half of the full axis lengths).
-    # angle: Rotation of ellipse in degrees.
-    # startAngle: Starting angle of arc.
-    # endAngle: Ending angle of arc.
-    # color: BGR color tuple.
-    # thickness: Border thickness (-1 fills the ellipse).
 
     # Keep only brown pixels inside the region of interest.
     # mask = np.bitwise_and(colour_mask, roi_mask)  # Combine masks to isolate only the pixels that belong to the bean or overlap region.
@@ -281,7 +280,7 @@ def display_results(  # Show the original image, bean mask, segmented bean view,
     f"L* = {median_lab[0]:.2f}\n"
     f"a* = {median_lab[1]:.2f}\n"
     f"b* = {median_lab[2]:.2f}\n\n"
-    f"Agtron = {estimated_agtron}\n"
+    f"Agtron = {estimated_agtron:.2f}\n"
     f"Distance = {error:.2f}"
     )  
 
@@ -299,13 +298,13 @@ def main() -> None:
     image_bgr = load_image(image_path)  
     cropped_image, mask, offset = create_bean_mask(image_bgr)
     end_time = time.perf_counter()
-    execution_time = end_time - start_time
 
     median, mean = measure_bean_colour(cropped_image,mask)
     median_lab = cv.BGR2LABone(median)
     mean_lab = cv.BGR2LABone(mean)
 
-    estimated_agtron, error = estimate_agtron(median_lab)  
+    estimated_agtron, error = estimate_agtron_linear(median_lab)  
+    execution_time = end_time - start_time
     print(f"Execution time: {execution_time:.6f} seconds")
 
     display_results(  

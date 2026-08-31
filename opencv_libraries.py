@@ -1,5 +1,85 @@
 import numpy as np
+from PIL import Image
 from scipy.ndimage import correlate1d
+
+COLOR_BGR2GRAY = 6
+COLOR_BGR2RGB = 4
+COLOR_Lab2RGB = 100
+IMREAD_GRAYSCALE = 0
+
+
+def imread(path, flags=1):
+    image = Image.open(path)
+    if flags == IMREAD_GRAYSCALE:
+        image = image.convert("L")
+        return np.asarray(image, dtype=np.uint8)
+
+    array = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    if flags == 1:
+        return array[:, :, ::-1]
+    return array
+
+
+def cvtColor(image, code):
+    if code == COLOR_BGR2GRAY:
+        rgb = image[:, :, ::-1].astype(np.float32)
+        gray = (
+            0.299 * rgb[:, :, 0]
+            + 0.587 * rgb[:, :, 1]
+            + 0.114 * rgb[:, :, 2]
+        )
+        return gray.astype(np.uint8)
+
+    if code == COLOR_BGR2RGB:
+        return image[:, :, ::-1]
+
+    if code == COLOR_Lab2RGB:
+        lab = image.astype(np.float32)
+        lab = lab.copy()
+        lab[..., 0] = np.clip(lab[..., 0] * 100.0 / 255.0, 0.0, 100.0)
+        lab[..., 1] = np.clip(lab[..., 1] - 128.0, -128.0, 127.0)
+        lab[..., 2] = np.clip(lab[..., 2] - 128.0, -128.0, 127.0)
+
+        L = lab[..., 0]
+        a = lab[..., 1]
+        b = lab[..., 2]
+
+        def f_lab(t):
+            delta = 6.0 / 29.0
+            delta_sq = delta ** 2
+            delta_cu = delta ** 3
+            return np.where(t > delta_cu, np.cbrt(t), t / (3 * delta_sq) + 4.0 / 29.0)
+
+        fy = f_lab((L + 16) / 116.0)
+        fx = f_lab((a / 500.0) + fy)
+        fz = f_lab(fy - (b / 200.0))
+
+        x = fx
+        y = fy
+        z = fz
+
+        xyz = np.stack([x, y, z], axis=-1)
+        d65_ref = np.array([0.95047, 1.00000, 1.08883], dtype=np.float32)
+        xyz = xyz / d65_ref
+
+        r_linear = 3.2404542 * xyz[..., 0] - 1.5371385 * xyz[..., 1] - 0.4985314 * xyz[..., 2]
+        g_linear = -0.9692660 * xyz[..., 0] + 1.8760108 * xyz[..., 1] + 0.0415560 * xyz[..., 2]
+        b_linear = 0.0556434 * xyz[..., 0] - 0.2040259 * xyz[..., 1] + 1.0572252 * xyz[..., 2]
+
+        srgb = np.stack([
+            np.where(r_linear <= 0.0031308, 12.92 * r_linear, 1.055 * np.power(r_linear, 1.0 / 2.4) - 0.055),
+            np.where(g_linear <= 0.0031308, 12.92 * g_linear, 1.055 * np.power(g_linear, 1.0 / 2.4) - 0.055),
+            np.where(b_linear <= 0.0031308, 12.92 * b_linear, 1.055 * np.power(b_linear, 1.0 / 2.4) - 0.055),
+        ], axis=-1)
+
+        rgb = np.clip(srgb, 0.0, 1.0)
+        return (rgb * 255.0).astype(np.uint8)
+
+    raise NotImplementedError(f"Unsupported colour conversion code: {code}")
+
+
+def bitwise_and(a, b):
+    return np.bitwise_and(a, b)
 
 # def GaussianBlur(
 #     image: np.ndarray,

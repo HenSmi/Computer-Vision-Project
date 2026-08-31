@@ -20,6 +20,48 @@ AGTRON_TABLE = [  # Store the Lab reference points used to estimate the nearest 
     {"agtron": 25, "L": 13.2, "a": 3.4,  "b": 0.1},  
 ]  
 
+def crop_to_ellipse(image: np.ndarray, centre: tuple[float, float], axes: tuple[float, float], angle: float = 0.0,) -> tuple[np.ndarray, np.ndarray, tuple[int, int]]:
+    #Crop an image to an ellipse.
+
+    if image.ndim != 3:
+        raise ValueError("image must be a 3D array: (height, width, channels)")
+
+    height, width = image.shape[:2]
+    cx, cy = centre
+    rx, ry = axes
+
+    angle_rad = np.deg2rad(angle)
+    cos_angle = np.cos(angle_rad)
+    sin_angle = np.sin(angle_rad)
+
+    # Bounding-box extents for a rotated ellipse.
+    x_extent = np.sqrt((rx * cos_angle) ** 2 + (ry * sin_angle) ** 2)
+    y_extent = np.sqrt((rx * sin_angle) ** 2 + (ry * cos_angle) ** 2)
+
+    x_min = max(0, int(np.floor(cx - x_extent)))
+    x_max = min(width, int(np.ceil(cx + x_extent)) + 1)
+    y_min = max(0, int(np.floor(cy - y_extent)))
+    y_max = min(height, int(np.ceil(cy + y_extent)) + 1)
+
+    # Coordinates within the cropped image.
+    y_coords, x_coords = np.indices((y_max - y_min, x_max - x_min))
+    x_coords = x_coords + x_min - cx
+    y_coords = y_coords + y_min - cy
+
+    # Rotate coordinates into the ellipse's local coordinate system.
+    x_rotated = cos_angle * x_coords + sin_angle * y_coords
+    y_rotated = -sin_angle * x_coords + cos_angle * y_coords
+
+    ellipse_mask = (
+        (x_rotated / rx) ** 2 +
+        (y_rotated / ry) ** 2
+    ) <= 1.0
+
+    cropped_image = image[y_min:y_max, x_min:x_max].copy()
+    cropped_image[~ellipse_mask] = 0
+
+    return cropped_image, ellipse_mask, (x_min, y_min)
+
 def estimate_agtron(measured_lab):  # Compare the measured bean colour to the Agtron reference table and return the closest match.
     """  
     Estimate the Agtron value by finding the nearest reference  
@@ -63,10 +105,18 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     conditions or roast levels.  
     """  
     height, width = image_bgr.shape[:2]  
+    centre = ((width // 2)+50, (height // 2)-120)  
+    # Adjust proportions to fit the circular bean region
+    # rn these values (0.17 and 0,25 for w and h) work for file.good.jpg ----> might need small adjustments but works well overall
+    axes = (  
+        int(width * 0.18),  
+        int(height * 0.26),  
+    )  
 
+    cropped_image, ellipse_mask, offset = crop_to_ellipse(image=image_bgr,centre=centre,axes=axes)
     # Slight blur reduces isolated noisy pixels.
     start1 = time.perf_counter()
-    blurred = cv.GaussianBlur(image_bgr, (5, 5), 0)  # Smooth the image to reduce noise before processing.
+    blurred = cv.GaussianBlur(cropped_image, (9, 9), 0)  # Smooth the image to reduce noise before processing.
     stop1 = time.perf_counter()
     print(-start1+stop1)
 
@@ -84,37 +134,26 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     lower_brown = np.array([20, 31, 15], dtype=np.uint8) #arbitrary values
     upper_brown = np.array([73,152,255], dtype=np.uint8)
 
-
-    # print(image_hsv)
-    # print(image_lab)
     colour_mask = cv.inRange(  # Mask only the brown coffee pixels that match the selected threshold range
         blurred,          # change this to either hsv or lab
         lower_brown,  
         upper_brown,  
     )  
 
-    # Limit processing to the central bean-containing region.
-    roi_mask = np.zeros((height, width), dtype=np.uint8)  # Initialise a blank array that will be filled with the processed output.
+    ellipse_mask_uint8 = (ellipse_mask * 255).astype(np.uint8)
+    mask = cv2.bitwise_and(colour_mask, ellipse_mask_uint8)
+    
+    # # Limit processing to the central bean-containing region.
+    # roi_mask = np.zeros((height, width), dtype=np.uint8)  # Initialise a blank array that will be filled with the processed output.
 
-    centre = ((width // 2)+50, (height // 2)-120)  
-
-    # Adjust proportions to fit the circular bean region
-    # rn these values (0.17 and 0,25 for w and h) work for file.good.jpg ----> might need small adjustments but works well overall
-    axes = (  
-        int(width * 0.18),  
-        int(height * 0.26),  
-    )  
-
-    cv2.ellipse(  # Draw the fitted ellipse on the output image to visually verify the bean shape.
-        roi_mask,  
-        centre,  
-        axes,  
-        0,  
-        0,  
-        360,  
-        255,  
-        thickness=-1,  #fills the ellipse
-    )  
+    # cv2.ellipse(  # Draw the fitted ellipse on the output image to visually verify the bean shape.
+    #     roi_mask,  
+    #     centre,  
+    #     axes,  
+    #     360,  
+    #     255,  
+    #     -1,  #fills the ellipse
+    # )  
     # image: Image on which ellipse is drawn.
     # center: Center of ellipse as (x, y).
     # axes: Tuple containing semi-major and semi-minor axis lengths (half of the full axis lengths).
@@ -125,27 +164,9 @@ def create_bean_mask(image_bgr: np.ndarray) -> np.ndarray:  # Mask the brown bea
     # thickness: Border thickness (-1 fills the ellipse).
 
     # Keep only brown pixels inside the region of interest.
-    mask = np.bitwise_and(colour_mask, roi_mask)  # Combine masks to isolate only the pixels that belong to the bean or overlap region.
+    # mask = np.bitwise_and(colour_mask, roi_mask)  # Combine masks to isolate only the pixels that belong to the bean or overlap region.
 
-
-
-    # small_kernel = cv2.getStructuringElement(  # Create the element that defines how the mask is expanded or eroded during filtering.
-    #     cv2.MORPH_ELLIPSE,  
-    #     (3, 3),
-    # )  
-
-    # large_kernel = cv2.getStructuringElement(  # Create the element that defines how the mask is expanded or eroded during filtering.
-    #     cv2.MORPH_ELLIPSE,  
-    #     (5, 5),
-    # )  
-
-    # Remove small isolated pixels.
-    # mask = cv2.morphologyEx(mask,cv2.MORPH_OPEN,small_kernel,iterations=1)  
-
-    # # Fill small holes and connect nearby bean regions.
-    # mask = cv2.morphologyEx(mask,cv2.MORPH_CLOSE,large_kernel,iterations=2)  
-
-    return mask
+    return cropped_image, mask, offset
 
 
 def measure_bean_colour(  # Read the Lab values of the masked bean pixels and summarise their colour as mean and median values.
@@ -215,8 +236,8 @@ def display_results(  # Show the original image, bean mask, segmented bean view,
     median_rgb = lab_to_rgb(median_lab)  
 
     # Create solid colour patches.
-    patch_height = 300  
-    patch_width = 300  
+    patch_height = 300
+    patch_width = 300
 
     mean_patch = np.ones(  
         (patch_height, patch_width, 3),
@@ -276,11 +297,11 @@ def main() -> None:
     image_path = Path("images/file.name1.jpg")  
 
     image_bgr = load_image(image_path)  
-    mask = create_bean_mask(image_bgr)  
+    cropped_image, mask, offset = create_bean_mask(image_bgr)
     end_time = time.perf_counter()
     execution_time = end_time - start_time
 
-    median, mean = measure_bean_colour(image_bgr,mask)
+    median, mean = measure_bean_colour(cropped_image,mask)
     median_lab = cv.BGR2LABone(median)
     mean_lab = cv.BGR2LABone(mean)
 
@@ -288,7 +309,7 @@ def main() -> None:
     print(f"Execution time: {execution_time:.6f} seconds")
 
     display_results(  
-    image_bgr,  
+    cropped_image,  
     mask,  
     mean_lab,  
     median_lab,  

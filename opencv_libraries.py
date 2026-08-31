@@ -1,41 +1,49 @@
 import numpy as np
+from scipy.ndimage import correlate1d
 
-def GaussianBlur(
-    image: np.ndarray,
-    ksize: tuple[int, int],
-    sigma: float = 0
-) -> np.ndarray:
-    from scipy.ndimage import convolve
+# def GaussianBlur(
+#     image: np.ndarray,
+#     ksize: tuple[int, int],
+#     sigma: float = 0
+# ) -> np.ndarray:
+#     from scipy.ndimage import convolve
     
+#     # compute sigma if 0
+#     if sigma == 0:
+#         sigma = 0.3 * ((ksize[0] - 1) * 0.5 - 1) + 0.8
+    
+#     # Create 1D Gaussian kernel
+#     radius = ksize[0] // 2
+#     x = np.arange(-radius, radius + 1)      # needed to seperate so that the -radius was not (for example) -3 for 5,5 kernel
+#     kernel_1d = np.exp(-(x**2) / (2 * sigma**2))
+#     kernel_1d /= kernel_1d.sum()
+#     # Convolve image with 1D kernel on each channel
+#     result = np.zeros_like(image, dtype=np.float32) 
+    
+#     img = image.astype(np.float32)
+#     img = correlate1d(img, kernel_1d, axis=0, mode='reflect')
+#     img = correlate1d(img, kernel_1d, axis=1, mode='reflect')
+    
+#     # Clip and convert back to original dtype
+#     result = np.clip(result, 0, 255)
+#     return result.astype(image.dtype)
+
+def GaussianBlur(image, ksize, sigma=0):
     # compute sigma if 0
     if sigma == 0:
         sigma = 0.3 * ((ksize[0] - 1) * 0.5 - 1) + 0.8
-    
+
     # Create 1D Gaussian kernel
     radius = ksize[0] // 2
-    x = np.arange(-radius, radius + 1)      # needed to seperate so that the -radius was not (for example) -3 for 5,5 kernel
+    x = np.arange(-radius, radius + 1) # needed to seperate so that the -radius was not (for example) -3 for 5,5 kernel
     kernel_1d = np.exp(-(x**2) / (2 * sigma**2))
     kernel_1d /= kernel_1d.sum()
-    # Convolve image with 1D kernel on each channel
-    result = np.zeros_like(image, dtype=np.float32) 
-    
-    for c in range(image.shape[2]):
-        # Convolve horizontal kernel
-        temp = convolve(
-            image[:, :, c].astype(np.float32),
-            kernel_1d[:, np.newaxis],
-            mode='reflect'
-        )
-        # Convolve vertical kernel
-        result[:, :, c] = convolve(
-            temp,
-            kernel_1d[np.newaxis, :],
-            mode='reflect'
-        )
-    
-    # Clip and convert back to original dtype
-    result = np.clip(result, 0, 255)
-    return result.astype(image.dtype)
+
+    img = image.astype(np.float32)
+    img = correlate1d(img, kernel_1d, axis=0, mode='reflect')   #much faster than stepping through the image
+    img = correlate1d(img, kernel_1d, axis=1, mode='reflect')
+
+    return np.clip(img, 0, 255).astype(image.dtype)
 
 #to create mask that maps what pixels are actually "bean colours"
 def inRange(
